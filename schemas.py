@@ -241,3 +241,33 @@ SCHED_ASK = {
         "required": ["text"],
     },
 }
+
+
+SCHED_ICAL_EXPORT = {
+    "name": "sched_ical_export",
+    "description": (
+        "Write the calendar feed (.ics) so the schedule shows up in whichever "
+        "calendar app the operator already uses. No account, key or OAuth — any "
+        "app can subscribe to the file or import it. Use when asked to get the "
+        "schedule into a calendar, or after a batch of changes."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": (
+                    "Where to write the file. Omit to use the configured location. "
+                    "A synced folder puts it on the phone; the default stays local, "
+                    "because copying a customer list to every device is not a "
+                    "decision to make by accident."
+                ),
+            },
+            "days_ahead": {
+                "type": "integer",
+                "description": "How far ahead to publish. Default 180 days.",
+            },
+        },
+        "required": [],
+    },
+}

@@ -65,6 +65,25 @@ MAX_REBALANCE_MOVES = 3
 
 # ── Voice ───────────────────────────────────────────────────────────────────
 
+# ── Calendar (.ics) ─────────────────────────────────────────────────────────
+
+# Where the feed is written. Empty means the plugin's own data directory, which
+# is the right default: writing into a synced vault would copy a customer list
+# to every device the operator owns, without them asking. Point this at the
+# vault to do that on purpose.
+ICAL_PATH = ""
+
+# How a job appears in the calendar:
+#   full      "Harris — job"      legible on a lock screen
+#   initials  "H — job"           recognised by the operator, not a passer-by
+#   generic   "Job — 3h"          no customer name at all
+# Decided 2026-11-08: full. On a SUBSCRIBED feed the name travels to whatever
+# server the calendar app syncs through, which was accepted knowingly.
+ICAL_TITLE_MODE = "full"
+
+# How far ahead the feed covers.
+ICAL_DAYS_AHEAD = 180
+
 VOICE_MAX_ITEMS = 3          # items in a spoken list before summarising
 VOICE_RELATIVE_TIMES = True  # "in 25 minutes" rather than "at 09:40"
 VOICE_HOT_PATH_TIMEOUT_MS = 1500  # Siri abandons slow Shortcuts

@@ -14,8 +14,8 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M3 — recommendations.** The plugin does the thing it exists for: rank days by
-travel cost and explain the ranking. The calendar feed and voice are not built.
+**M4 — calendar.** `sched_ical_export` writes a `.ics` feed any calendar app can
+subscribe to or import. No OAuth, no key, nothing to register. Voice is left.
 
 | Milestone | What it adds |
 |---|---|

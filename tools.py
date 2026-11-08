@@ -17,10 +17,10 @@ from __future__ import annotations
 import json
 import time
 
-from . import config, db, engine, geo, matrix, nl
+from . import config, db, engine, geo, ical, matrix, nl
 
 PLUGIN = "route-book"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 
 def _ok(**payload):
@@ -728,6 +728,26 @@ def sched_recommend(args, **kwargs):
     else:
         result["recommendation"] = None
         result["message"] = "No feasible day in that window. See rejected for why."
+    return _ok(**result)
+
+
+def sched_ical_export(args, **kwargs):
+    """Write the .ics feed that any calendar app can subscribe to or import.
+
+    No OAuth and nothing to register — the whole reason this is the v1 calendar
+    story. Point ICAL_PATH at a synced folder if the operator wants it on their
+    phone; by default it stays local.
+    """
+    try:
+        result = ical.export(path=args.get("path") or None,
+                             days_ahead=args.get("days_ahead") or config.ICAL_DAYS_AHEAD)
+    except Exception as exc:
+        return _err(f"could not write the calendar feed: {exc}")
+
+    result["hint"] = (
+        "Subscribe to this file, or import it. Apple Calendar, Google Calendar, "
+        "Fastmail, Nextcloud and Outlook all read it — no account or key needed."
+    )
     return _ok(**result)
 
 

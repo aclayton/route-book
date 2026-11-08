@@ -69,9 +69,9 @@ Thursday.
 
 ## If something is not implemented
 
-This plugin is at **M3**. Everything except the calendar feed (M4) and voice (M6)
-works, including `sched_recommend` — the one that answers "which day is best".
-`hermes sched` setup and the conversational layer are still to come.
+This plugin is at **M4**. Everything works except voice (M6) and the
+conversational layer (M5). `sched_recommend` answers "which day is best";
+`sched_ical_export` puts the schedule into any calendar app with no account.
 
 Relay that plainly and name the milestone. Do not invent an answer to fill the
 gap, and do not fall back to doing the scheduling by hand in chat.

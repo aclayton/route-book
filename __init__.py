@@ -35,6 +35,7 @@ TOOL_NAMES = [
     "sched_move",
     "sched_cancel",
     "sched_matrix_refresh",
+    "sched_ical_export",
     "sched_ask",
 ]
 
