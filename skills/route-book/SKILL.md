@@ -69,7 +69,12 @@ Thursday.
 
 ## If something is not implemented
 
-This plugin is at **M0**. Tools return `{"error": "not_implemented"}`. Relay that
-plainly and name the milestone — do not invent an answer to fill the gap, and do
-not fall back to doing the scheduling by hand in chat. Say what's missing and
-what it will do when it lands.
+This plugin is at **M1**. Client records, service areas and geocoding work.
+Everything else — booking, day and week views, recommendations — returns
+`{"error": "not_implemented"}` with the milestone that fills it.
+
+Relay that plainly and name the milestone. Do not invent an answer to fill the
+gap, and do not fall back to doing the scheduling by hand in chat.
+
+When a client is stored **without coordinates**, say so — travel times for that
+client will be missing, and the fix is to correct the address.

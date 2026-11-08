@@ -14,13 +14,13 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M0 — skeleton.** The tool surface is declared and the plugin loads, but the
-handlers are stubs. Nothing is implemented and nothing writes anything yet.
+**M1 — clients and geography.** Clients, service areas and geocoding are real
+and tested. Booking, recommendations, the calendar feed and voice are not.
 
 | Milestone | What it adds |
 |---|---|
-| **M0** | Skeleton, tool surface, config defaults — *you are here* |
-| M1 | Clients, service areas, geocoding |
+| M0 | Skeleton, tool surface, config defaults |
+| **M1** | Clients, service areas, geocoding — *you are here* |
 | M2 | Booking, day and week views |
 | M3 | **Recommendations** — travel matrix, insertion cost, explanations |
 | M4 | `.ics` calendar feed |
