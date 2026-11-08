@@ -14,15 +14,15 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M2 — booking.** Clients, service areas, geocoding, booking, and day/week
-views are real and tested. Recommendations, the calendar feed and voice are not.
+**M3 — recommendations.** The plugin does the thing it exists for: rank days by
+travel cost and explain the ranking. The calendar feed and voice are not built.
 
 | Milestone | What it adds |
 |---|---|
 | M0 | Skeleton, tool surface, config defaults |
 | M1 | Clients, service areas, geocoding |
-| **M2** | Booking, the date parser, day and week views — *you are here* |
-| M3 | **Recommendations** — travel matrix, insertion cost, explanations |
+| M2 | Booking, the date parser, day and week views |
+| **M3** | **Recommendations** — travel matrix, insertion cost, explanations — *you are here* |
 | M4 | `.ics` calendar feed |
 | M5 | Conversational layer (`ctx.llm`, with a deterministic fallback) |
 | M6 | Siri voice |

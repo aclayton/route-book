@@ -67,9 +67,61 @@ def fresh_db():
     root.mkdir(parents=True, exist_ok=True)
 
 
+def fail_on_resource_leaks():
+    """Turn ResourceWarning into an error for the whole suite.
+
+    An unclosed sqlite connection is invisible in a normal test run and becomes a
+    file-descriptor leak in a gateway that runs for weeks. Promoting the warning
+    means a leak fails the build the moment it is introduced, rather than being
+    noticed in production.
+    """
+    import warnings
+    warnings.simplefilter("error", ResourceWarning)
+
+
+def forbid_network():
+    """Make any outbound connection a test failure.
+
+    The suite is supposed to run offline. It did not: two tests reached the live
+    Nominatim and OSRM services, which fail for reasons unrelated to the code
+    and are rude to public demo servers. A stub that is forgotten is silent;
+    this is not.
+    """
+    import socket
+
+    if getattr(socket, "_route_book_guarded", False):
+        return
+
+    real_socket = socket.socket
+
+    class _Guarded(real_socket):
+        def connect(self, address):
+            import traceback
+            # Name the caller. A guard that only says "something connected" makes
+            # you hunt; one that says which test and which function does not.
+            stack = traceback.extract_stack()
+            ours = [f for f in stack
+                    if "route-book" in f.filename and "_bootstrap" not in f.filename]
+            where = " <- ".join(f"{f.name}" for f in ours[-3:]) or "unknown"
+            raise AssertionError(
+                f"network connection to {address!r} attempted from {where} — "
+                "stub the outbound call instead"
+            )
+
+        def connect_ex(self, address):
+            raise AssertionError(
+                f"test attempted a network connection to {address!r}"
+            )
+
+    socket.socket = _Guarded
+    socket._route_book_guarded = True
+
+
 def load_plugin():
     """Import the plugin as a package and return the module namespace."""
     _install_storage_stub()
+    forbid_network()
+    fail_on_resource_leaks()
 
     if PKG_NAME in sys.modules:
         return sys.modules[PKG_NAME]
@@ -88,7 +140,7 @@ def load_plugin():
 
     # `__init__.py` imports only what `register()` needs, so submodules that are
     # not on that path have to be pulled in explicitly for tests to reach them.
-    for sub in ("db", "geo", "tools", "nl", "schemas"):
+    for sub in ("db", "geo", "tools", "nl", "schemas", "engine", "matrix"):
         try:
             importlib.import_module(f"{PKG_NAME}.{sub}")
         except ImportError:

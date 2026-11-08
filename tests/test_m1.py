@@ -116,6 +116,13 @@ class ClientList(unittest.TestCase):
 
 class AreaSet(unittest.TestCase):
 
+    def setUp(self):
+        # BOTH outbound helpers, every time. An earlier version stubbed only
+        # geocode, so this class reached the live Nominatim service for real —
+        # and the suite silently depended on it.
+        geo.geocode = lambda address, city="", country="Canada": (43.09, -79.08, "stub")
+        geo.area_bbox = lambda region: (-79.45, 42.85, -78.85, 43.15)
+
     def test_needs_a_name(self):
         out = json.loads(tools.sched_area_set({"region": "Niagara region"}))
         self.assertIn("error", out)
@@ -155,16 +162,42 @@ class AreaSet(unittest.TestCase):
 class StubsAreHonest(unittest.TestCase):
     """An unimplemented tool must say so rather than return something plausible."""
 
-    def test_unimplemented_tools_name_their_milestone(self):
-        # Only the ones still unimplemented. sched_book moved to real behaviour
-        # in M2, so asserting it here would pin the test to a finished milestone.
-        for fn, milestone in ((tools.sched_recommend, "M3"),
-                              (tools.sched_ask, "M5"),
-                              (tools.sched_matrix_refresh, "M3")):
+    def test_any_unimplemented_tool_names_a_valid_milestone(self):
+        """Written to survive every future milestone.
+
+        Earlier versions of this test listed which tools were still stubs, so
+        each milestone broke it — three times. The list was the bug: it pinned a
+        moving target. This asserts the *shape* of an unimplemented reply
+        instead, which stays true as tools come online.
+        """
+        valid = {f"M{n}" for n in range(0, 10)} | {f"M{n}b" for n in range(0, 10)}
+        seen_unimplemented = []
+
+        for name in plugin.TOOL_NAMES:
+            with self.subTest(tool=name):
+                result = json.loads(getattr(tools, name)({}))
+                if result.get("error") == "not_implemented":
+                    seen_unimplemented.append(name)
+                    self.assertIn(result.get("milestone"), valid,
+                                  f"{name} names an implausible milestone")
+                    self.assertIn("message", result)
+
+        # Not an assertion about WHICH are stubs — just that the roster is sane.
+        self.assertLess(len(seen_unimplemented), len(plugin.TOOL_NAMES),
+                        "every tool is a stub; at least one milestone should be real")
+
+    def test_completed_milestone_tools_are_not_stubs(self):
+        """The converse, pinned once per milestone so a regression is loud.
+
+        If a finished tool ever starts returning not_implemented again, that is a
+        real regression and this catches it by name.
+        """
+        for fn in (tools.sched_client_add, tools.sched_area_set,
+                   tools.sched_book, tools.sched_day, tools.sched_week):
             with self.subTest(tool=fn.__name__):
                 out = json.loads(fn({}))
-                self.assertEqual(out["error"], "not_implemented")
-                self.assertEqual(out["milestone"], milestone)
+                self.assertNotEqual(out.get("error"), "not_implemented",
+                                    f"{fn.__name__} regressed to a stub")
 
     def test_every_handler_returns_a_string_and_never_raises(self):
         for name in plugin.TOOL_NAMES:

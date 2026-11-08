@@ -23,7 +23,7 @@ from plugins.plugin_storage import plugin_db, plugin_data_dir  # noqa: F401
 
 PLUGIN_NAME = "route-book"
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -72,6 +72,14 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 CREATE INDEX IF NOT EXISTS idx_appt_date ON appointments(date);
 CREATE INDEX IF NOT EXISTS idx_appt_client ON appointments(client_id);
+
+CREATE TABLE IF NOT EXISTS travel_matrices (
+    signature   TEXT PRIMARY KEY,   -- hash of the ordered point set
+    payload     TEXT NOT NULL,      -- the durations (and distances) as JSON
+    approximate INTEGER NOT NULL DEFAULT 0,
+    source      TEXT NOT NULL,
+    built_at    REAL NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS areas (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

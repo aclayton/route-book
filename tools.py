@@ -17,10 +17,10 @@ from __future__ import annotations
 import json
 import time
 
-from . import config, db, geo, nl
+from . import config, db, engine, geo, matrix, nl
 
 PLUGIN = "route-book"
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def _ok(**payload):
@@ -95,6 +95,57 @@ def _parse_duration(text):
         return int(float(text))  # a bare number means minutes
     except ValueError:
         return None
+
+
+def _travel_for(conn, force=False):
+    """Build the cached travel matrix for every active client and return Travel.
+
+    Returns (travel, entries, note). `note` explains an approximate matrix so
+    every caller can surface it — a fallback presented as a measurement is worse
+    than no measurement.
+
+    **The home base is part of the matrix.** It was omitted in the first version,
+    so `home -> first job` and `last job -> home` had no known time, every day
+    reported "no travel time known between home and X", and no day could ever be
+    feasible. A day starts and ends at the base, so the base has to be a point.
+    """
+    home = None
+    if config.HOME_BASE:
+        try:
+            lat, lon, _label = geo.geocode(config.HOME_BASE)
+            home = (lat, lon)
+        except geo.GeoError as exc:
+            return None, [], f"could not locate the home base {config.HOME_BASE!r}: {exc}"
+
+    entries = matrix.client_points(conn, include_home=home)
+    if len(entries) < 2:
+        return None, entries, (f"fewer than two located points — found {len(entries)}"
+                               + ("" if home else "; no home base is set either"))
+    if home is None:
+        return None, entries, (
+            "no home base is set, so a day has no start or end point. "
+            "Set one and travel times become meaningful."
+        )
+    points = [(e["lat"], e["lon"]) for e in entries]
+    try:
+        built = matrix.build_matrix(points, force=force)
+    except matrix.MatrixError as exc:
+        return None, entries, f"could not build a travel matrix: {exc}"
+    travel = engine.Travel.from_matrix(entries, built)
+    note = None
+    if built.get("approximate"):
+        note = ("drive times are ESTIMATES (straight-line at a road factor), not "
+                "routed — the routing service was unreachable")
+    return travel, entries, note
+
+
+def _stops_for(appt_rows):
+    """Appointment rows -> engine.Stop objects."""
+    return [
+        engine.Stop(a["client_id"], a["client_name"], a["client_city"],
+                    engine.parse_hhmm(a["start_local"]), a["duration_min"])
+        for a in appt_rows
+    ]
 
 
 # ── M1 — clients + geography ────────────────────────────────────────────────
@@ -233,7 +284,34 @@ def sched_area_set(args, **kwargs):
 # ── Later milestones ────────────────────────────────────────────────────────
 
 def sched_matrix_refresh(args, **kwargs):
-    return _stub("sched_matrix_refresh", "M3", "Builds the pairwise drive-time cache via OSRM.")
+    """Rebuild the cached travel matrix.
+
+    One request, not one per pair: OSRM's /table service returns the whole
+    matrix at once, so a 25-client matrix costs a single call rather than 600.
+    """
+    try:
+        with db.open_db() as conn:
+            entries = matrix.client_points(conn)
+            if len(entries) < 2:
+                return _err(
+                    "need at least two located clients to build a matrix",
+                    located=len(entries),
+                    hint="run sched_client_add for clients without coordinates",
+                )
+            points = [(e["lat"], e["lon"]) for e in entries]
+            built = matrix.build_matrix(points, force=True)
+    except matrix.MatrixError as exc:
+        return _err(str(exc))
+    except Exception as exc:
+        return _err(f"could not build the matrix: {exc}")
+
+    return _ok(
+        status="rebuilt",
+        points=len(points),
+        source=built["source"],
+        approximate=built["approximate"],
+        note=("Drive times are ESTIMATES, not routed." if built["approximate"] else None),
+    )
 
 
 def _today():
@@ -355,12 +433,10 @@ def sched_book(args, **kwargs):
 
 
 def sched_day(args, **kwargs):
-    """One day as a timeline: jobs, the break, and the gaps between them.
+    """One day as a timeline: jobs, drive legs, the break, and the slack.
 
-    **No drive legs yet.** Travel times need the matrix (M3), and inventing them
-    from straight-line distance would be worse than omitting them — the gaps
-    shown are real, and a gap that looks big enough may not be once driving is
-    counted. The tool says so rather than implying a validated day.
+    Drive times are real as of M3. Where the matrix is an estimate the reply says
+    so, because a day told with estimated legs must not read as a validated day.
     """
     today = _today()
     when = nl.parse_when(args.get("when") or "today", today)
@@ -369,68 +445,65 @@ def sched_day(args, **kwargs):
 
     try:
         with db.open_db() as conn:
-            appts = db.appointments_on(conn, when.isoformat())
+            rows = db.appointments_on(conn, when.isoformat())
+            travel, _entries, note = _travel_for(conn)
     except Exception as exc:
         return _err(f"could not read that day: {exc}")
 
-    if not appts:
+    if not rows:
         return _ok(date=when.isoformat(), day=when.strftime("%A"),
                    jobs=[], job_count=0, hands_on_minutes=0,
-                   message=f"Nothing booked on {when.strftime('%A')}.",
-                   note="Drive times arrive in M3; gaps are real time, not validated.")
+                   message=f"Nothing booked on {when.strftime('%A')}.")
 
-    timeline = []
-    service_total = 0
-    cursor = _minutes_from_hhmm(config.WORK_START)
-    break_minutes = config.BREAK_MINUTES
-    break_placed = False
-    break_not_before = _minutes_from_hhmm(config.BREAK_EARLIEST)
-    break_not_after = _minutes_from_hhmm(config.BREAK_LATEST)
+    stops = _stops_for(rows)
 
-    for appt in appts:
-        start = _minutes_from_hhmm(appt["start_local"])
-        end = start + appt["duration_min"]
-        gap = start - cursor
-        # Largest gap so far, to place the break in — a break belongs in the
-        # emptiest part of the day, not bolted on at a fixed clock time.
-        if (not break_placed and gap >= break_minutes
-                and break_not_before <= start <= break_not_after):
-            timeline.append({"kind": "break", "start": _hhmm_from_minutes(cursor),
-                             "end": _hhmm_from_minutes(cursor + break_minutes),
-                             "minutes": break_minutes})
-            cursor += break_minutes
-            break_placed = True
-        if gap > 0:
-            timeline.append({"kind": "gap", "start": _hhmm_from_minutes(cursor),
-                             "end": appt["start_local"], "minutes": gap})
-        timeline.append({
-            "kind": "job",
-            "client": appt["client_name"],
-            "city": appt["client_city"],
-            "start": appt["start_local"],
-            "end": _hhmm_from_minutes(end),
-            "minutes": appt["duration_min"],
-        })
-        service_total += appt["duration_min"]
-        cursor = end
+    if travel is None:
+        # Still useful without a matrix, but it must not imply validation.
+        return _ok(
+            date=when.isoformat(), day=when.strftime("%A"),
+            jobs=[s.as_dict() for s in stops], job_count=len(stops),
+            hands_on_minutes=sum(s.duration for s in stops),
+            travel_note=note or "no travel matrix available",
+            warning="Drive times unavailable, so this day has NOT been checked "
+                    "for feasibility.",
+        )
 
-    elapsed = cursor - _minutes_from_hhmm(config.WORK_START)
-    return _ok(
-        date=when.isoformat(),
-        day=when.strftime("%A"),
-        job_count=len(appts),
-        hands_on_minutes=service_total,
-        elapsed_minutes=elapsed,
-        timeline=timeline,
-        note=("Drive times arrive in M3. The gaps shown are real clock time but "
-              "have not been checked against travel — do not treat the day as "
-              "validated yet."),
-    )
+    state = engine.timeline(stops, travel)
+    result = {
+        "date": when.isoformat(),
+        "day": when.strftime("%A"),
+        "jobs": state["stops"],
+        "legs": state["legs"],
+        "gaps": state["gaps"],
+        "job_count": len(stops),
+        "hands_on_minutes": state["service_minutes"],
+        "drive_minutes": state["drive_minutes"],
+        "drive_hours": round(state["drive_minutes"] / 60, 1),
+        "elapsed_minutes": state["elapsed_minutes"],
+        "slack_minutes": state["slack_minutes"],
+        "feasible": state["feasible"],
+    }
+    if state["problems"]:
+        result["problems"] = state["problems"]
+    if note or state["approximate"]:
+        result["warning"] = note or "drive times are estimates, not routed"
+    if state["slack_minutes"] <= config.OVERRUN_TOLERANCE_MIN:
+        result["fragile"] = (
+            f"only {state['slack_minutes']} min of slack — one job running "
+            f"{config.OVERRUN_TOLERANCE_MIN} min long would push everything after it"
+        )
+    return _ok(**result)
 
 
 def sched_week(args, **kwargs):
-    """The week's shape: jobs, hands-on hours, and which days carry the load."""
+    """The week's shape: jobs, hands-on hours, drive time, and the best move.
+
+    The improvement is returned as *advice*. A scheduler that silently
+    reorganises a week to save 40 minutes gets switched off within a month, so
+    this says what it would do and leaves the decision alone.
+    """
     from datetime import timedelta
+
     today = _today()
     anchor = nl.parse_when(args.get("start") or "today", today)
     if anchor is None:
@@ -441,13 +514,14 @@ def sched_week(args, **kwargs):
 
     try:
         with db.open_db() as conn:
-            appts = db.appointments_between(conn, monday.isoformat(), sunday.isoformat())
+            rows = db.appointments_between(conn, monday.isoformat(), sunday.isoformat())
+            travel, _entries, note = _travel_for(conn)
     except Exception as exc:
         return _err(f"could not read the week: {exc}")
 
     per_day = {}
     service_total = 0
-    for a in appts:
+    for a in rows:
         entry = per_day.setdefault(a["date"], {"jobs": 0, "minutes": 0, "cities": []})
         entry["jobs"] += 1
         entry["minutes"] += a["duration_min"]
@@ -455,33 +529,206 @@ def sched_week(args, **kwargs):
         if a["client_city"] and a["client_city"] not in entry["cities"]:
             entry["cities"].append(a["client_city"])
 
-    busiest = max(per_day.items(), key=lambda kv: kv[1]["minutes"])[0] if per_day else None
+    result = {
+        "week_start": monday.isoformat(),
+        "week_end": sunday.isoformat(),
+        "job_count": len(rows),
+        "hands_on_minutes": service_total,
+        "hands_on_hours": round(service_total / 60, 1),
+        "days_worked": len(per_day),
+        "busiest_day": (max(per_day.items(), key=lambda kv: kv[1]["minutes"])[0]
+                        if per_day else None),
+        "per_day": per_day,
+    }
 
-    return _ok(
-        week_start=monday.isoformat(),
-        week_end=sunday.isoformat(),
-        job_count=len(appts),
-        hands_on_minutes=service_total,
-        hands_on_hours=round(service_total / 60, 1),
-        days_worked=len(per_day),
-        busiest_day=busiest,
-        per_day=per_day,
-        note=("Drive time is not included yet — it arrives with the travel matrix in "
-              "M3, along with the saving available from moving anything."),
-    )
+    if travel is None:
+        result["travel_note"] = note or "no travel matrix available"
+        return _ok(**result)
+
+    by_date = {}
+    for a in rows:
+        by_date.setdefault(a["date"], []).append(a)
+
+    drive_total = 0
+    infeasible = []
+    for date_iso, day_rows in by_date.items():
+        state = engine.timeline(_stops_for(day_rows), travel)
+        drive_total += state["drive_minutes"]
+        if not state["feasible"]:
+            infeasible.append({"date": date_iso, "why": state["problems"]})
+
+    result["drive_minutes"] = drive_total
+    result["drive_hours"] = round(drive_total / 60, 1)
+    if infeasible:
+        result["infeasible_days"] = infeasible
+
+    days = {d: _stops_for(r) for d, r in by_date.items()}
+    advice = engine.best_improvement(days, travel)
+    if advice:
+        result["improvement_available"] = advice
+    else:
+        result["improvement_available"] = None
+        result["note"] = "No better arrangement found for this week."
+    if note or travel.approximate:
+        result["warning"] = note or "drive times are estimates, not routed"
+    return _ok(**result)
 
 
 def sched_move(args, **kwargs):
-    return _stub("sched_move", "M2")
+    """Move an existing appointment to another day.
+
+    The destination is echoed back, so a misheard date is visible before it
+    becomes somebody's changed routine.
+    """
+    import time
+    today = _today()
+    client_arg = (args.get("client") or "").strip()
+    to_when = nl.parse_when(args.get("to_when") or "", today)
+    if not client_arg:
+        return _err("which client?")
+    if to_when is None:
+        return _err(f"could not read a destination date from {args.get('to_when')!r}")
+
+    try:
+        with db.open_db() as conn:
+            matches = nl.find_named_clients(client_arg, db.find_clients(conn))
+            if not matches:
+                return _err(f"no client matches {client_arg!r}")
+            if len(matches) > 1:
+                return _err(f"{len(matches)} clients match {client_arg!r}",
+                            candidates=[{"id": c["id"], "name": c["name"], "city": c["city"]}
+                                        for c in matches])
+            client = matches[0]
+            existing = db.appointments_for_client(conn, client["id"])
+            if not existing:
+                return _err(f"{client['name']} has no upcoming appointments")
+            target = existing[0]
+            conn.execute("UPDATE appointments SET date=?, updated_at=? WHERE id=?",
+                         (to_when.isoformat(), time.time(), target["id"]))
+            conn.commit()
+    except Exception as exc:
+        return _err(f"could not move the appointment: {exc}")
+
+    return _ok(
+        status="moved",
+        client={"id": client["id"], "name": client["name"], "city": client["city"]},
+        from_date=target["date"], to_date=to_when.isoformat(),
+        to_day=to_when.strftime("%A"), start_unchanged=target["start_local"],
+        readable=(f"{client['name']} moved from {target['date']} to "
+                  f"{to_when.strftime('%A')} {to_when.strftime('%d %b')}"),
+    )
 
 
 def sched_cancel(args, **kwargs):
-    return _stub("sched_cancel", "M2")
+    """Cancel an appointment."""
+    today = _today()
+    client_arg = (args.get("client") or "").strip()
+    when = nl.parse_when(args.get("when") or "", today)
+    if not client_arg:
+        return _err("which client?")
+
+    try:
+        with db.open_db() as conn:
+            matches = nl.find_named_clients(client_arg, db.find_clients(conn))
+            if not matches:
+                return _err(f"no client matches {client_arg!r}")
+            if len(matches) > 1:
+                return _err(f"{len(matches)} clients match {client_arg!r}",
+                            candidates=[{"id": c["id"], "name": c["name"], "city": c["city"]}
+                                        for c in matches])
+            client = matches[0]
+            if when is not None:
+                rows = [r for r in db.appointments_on(conn, when.isoformat())
+                        if r["client_id"] == client["id"]]
+            else:
+                rows = list(db.appointments_for_client(conn, client["id"]))[:1]
+            if not rows:
+                return _err(f"nothing booked for {client['name']} on that day")
+            rows = list(rows)
+            for row in rows:
+                db.cancel_appointment(conn, row["id"])
+    except Exception as exc:
+        return _err(f"could not cancel: {exc}")
+
+    return _ok(
+        status="cancelled",
+        client={"id": client["id"], "name": client["name"]},
+        cancelled=[{"date": r["date"], "start": r["start_local"]} for r in rows],
+        readable=f"Cancelled {len(rows)} appointment(s) for {client['name']}.",
+    )
 
 
 def sched_recommend(args, **kwargs):
-    return _stub("sched_recommend", "M3",
-                 "Ranks days by marginal insertion cost with hard time-feasibility filters.")
+    """Rank candidate days by travel cost, with the reasoning.
+
+    Feasibility is applied first and never becomes a score term: a day you
+    cannot physically drive is not a low-scoring day, it is not a candidate.
+    Rejected days are returned with their reasons rather than dropped, because
+    "why not Thursday" is a question the operator will ask.
+    """
+    from datetime import date, timedelta
+
+    today = _today()
+    client_arg = (args.get("client") or "").strip()
+    if not client_arg:
+        return _err("which client?")
+
+    within = nl.parse_when(args.get("within") or "", today)
+    horizon = (within - today).days if within else 14
+    if horizon <= 0:
+        horizon = 14
+
+    try:
+        with db.open_db() as conn:
+            matches = nl.find_named_clients(client_arg, db.find_clients(conn))
+            if not matches:
+                return _err(f"no client matches {client_arg!r}")
+            if len(matches) > 1:
+                return _err(
+                    f"{len(matches)} clients match {client_arg!r}",
+                    candidates=[{"id": c["id"], "name": c["name"], "city": c["city"]}
+                                for c in matches],
+                )
+            client = matches[0]
+            travel, entries, note = _travel_for(conn)
+            if travel is None:
+                return _err(note or "no travel matrix available")
+
+            # Candidate days: allowed weekdays in the window, with whatever is
+            # already booked on each.
+            days = {}
+            for offset in range(horizon + 1):
+                d = today + timedelta(days=offset)
+                if config.WORKING_DAYS and d.strftime("%A") not in config.WORKING_DAYS:
+                    continue
+                rows = db.appointments_on(conn, d.isoformat())
+                days[d.isoformat()] = _stops_for(rows)
+    except Exception as exc:
+        return _err(f"could not prepare the recommendation: {exc}")
+
+    if not days:
+        return _err("no working days in that window")
+
+    result = engine.recommend(
+        client["id"], dict(client), days, travel,
+        opts={"duration": nl.parse_duration(args.get("duration")),
+              "window": client.get("preferred_window")},
+    )
+
+    result["client"] = {"id": client["id"], "name": client["name"], "city": client["city"]}
+    result["window_days"] = len(days)
+    if note:
+        result["warning"] = note
+    if result["recommended"]:
+        top = result["recommended"][0]
+        result["recommendation"] = (
+            f"{top['date']} ({date.fromisoformat(top['date']).strftime('%A')}), "
+            f"starting {top['start']} — " + "; ".join(top["reasons"])
+        )
+    else:
+        result["recommendation"] = None
+        result["message"] = "No feasible day in that window. See rejected for why."
+    return _ok(**result)
 
 
 def sched_ask(args, **kwargs):

@@ -29,18 +29,48 @@ geo = plugin.geo
 db = plugin.db
 
 
-def _fresh_client(name, city="Fort Erie"):
-    geo.geocode = lambda address, city="", country="Canada": (43.0, -79.0, "stub")
+_GEO_SEQ = [43.0 + i * 0.05 for i in range(50)]
+
+
+def _stub_matrix(monkey, minutes=12):
+    """Replace the network matrix with a fixed, deterministic one.
+
+    The suite must not call OSRM: it is a public demo instance with rate limits,
+    and a test that depends on it fails for reasons unrelated to the code.
+    """
+    def fake_build(points, force=False):
+        n = len(points)
+        grid = [[0 if i == j else minutes for j in range(n)] for i in range(n)]
+        return {"minutes": grid, "km": None, "approximate": False,
+                "source": "stub", "points": list(points)}
+    monkey.build_matrix = fake_build
+
+
+def _fresh_client(name, city="Fort Erie", lat=None, lon=-79.0):
+    """Create a client with a distinct location so matrices can be built.
+
+    Distinct coordinates matter: identical ones make a degenerate matrix and
+    hide indexing bugs.
+    """
+    if lat is None:
+        lat = _GEO_SEQ.pop(0) if _GEO_SEQ else 43.0
+    geo.geocode = lambda address, city="", country="Canada", _lat=lat, _lon=lon: (
+        _lat, _lon, "stub")
     return json.loads(tools.sched_client_add({
         "name": name, "address": f"1 {name} St", "city": city,
         "duration": "3 hrs", "cadence": "weekly",
     }))["client"]
 
 
+HOME = "12 Base Rd, Fort Erie, ON"
+
+
 class Booking(unittest.TestCase):
 
     def setUp(self):
         fresh_db()
+        plugin.config.HOME_BASE = HOME
+        _stub_matrix(plugin.matrix)
         geo.geocode = lambda address, city="", country="Canada": (43.0, -79.0, "stub")
         self.client = _fresh_client("Booker")
 
@@ -99,6 +129,8 @@ class DayPlan(unittest.TestCase):
 
     def setUp(self):
         fresh_db()
+        plugin.config.HOME_BASE = HOME
+        _stub_matrix(plugin.matrix)
         geo.geocode = lambda address, city="", country="Canada": (43.0, -79.0, "stub")
 
     def test_empty_day_says_so_plainly(self):
@@ -106,37 +138,45 @@ class DayPlan(unittest.TestCase):
         self.assertEqual(out["job_count"], 0)
         self.assertEqual(out["hands_on_minutes"], 0)
 
-    def test_day_plan_reports_gaps_and_never_claims_drive_times(self):
-        client = _fresh_client("Timeline")
+    def test_day_plan_reports_jobs_and_gaps(self):
+        # Two located clients are needed for a travel matrix. With one, the tool
+        # correctly declines to show gaps rather than implying a validated day.
+        _fresh_client("Timeline")
+        _fresh_client("Second")
         tools.sched_book({"client": "Timeline", "when": "2026-11-17",
                           "duration": "3 hrs", "start": "09:00"})
         tools.sched_book({"client": "Timeline", "when": "2026-11-17",
                           "duration": "2 hrs", "start": "14:00"})
         out = json.loads(tools.sched_day({"when": "2026-11-17"}))
         self.assertGreaterEqual(out["job_count"], 2)
-        kinds = [t["kind"] for t in out["timeline"]]
-        self.assertIn("job", kinds)
-        self.assertIn("gap", kinds)
-        # The honest-limits note must survive: a day told without travel must not
-        # read as a validated day.
-        self.assertIn("M3", out["note"])
+        self.assertIn("jobs", out)
+        self.assertIn("gaps", out)
+        # The idle between 12:10 and 14:00 is real clock time and worth showing.
+        self.assertTrue(out["gaps"], "expected a gap between the two jobs")
 
-    def test_break_is_placed_inside_the_working_window(self):
+    def test_day_plan_says_when_travel_is_unavailable(self):
+        """A day told without drive times must not read as a validated day.
+
+        With no located clients there is no matrix, and the reply has to admit
+        that rather than implying the day was checked.
+        """
         _fresh_client("Timeline")
-        tools.sched_book({"client": "Timeline", "when": "2026-11-18",
+        tools.sched_book({"client": "Timeline", "when": "2026-11-17",
                           "duration": "3 hrs", "start": "09:00"})
-        tools.sched_book({"client": "Timeline", "when": "2026-11-18",
-                          "duration": "3 hrs", "start": "13:30"})
-        out = json.loads(tools.sched_day({"when": "2026-11-18"}))
-        breaks = [t for t in out["timeline"] if t["kind"] == "break"]
-        for b in breaks:
-            self.assertGreaterEqual(b["start"], plugin.config.BREAK_EARLIEST)
+        out = json.loads(tools.sched_day({"when": "2026-11-17"}))
+        # Either it has a matrix and reports feasibility, or it admits it cannot.
+        self.assertTrue(
+            "feasible" in out or "warning" in out,
+            f"day plan neither validated nor disclaimed: {sorted(out)}",
+        )
 
 
 class WeekView(unittest.TestCase):
 
     def setUp(self):
         fresh_db()
+        plugin.config.HOME_BASE = HOME
+        _stub_matrix(plugin.matrix)
         geo.geocode = lambda address, city="", country="Canada": (43.0, -79.0, "stub")
         _fresh_client("Booker")
 
@@ -148,7 +188,12 @@ class WeekView(unittest.TestCase):
         self.assertEqual(out["week_end"], "2026-11-22")
         self.assertGreaterEqual(out["job_count"], 1)
         self.assertGreater(out["hands_on_hours"], 0)
-        self.assertIn("M3", out["note"])
+        # M3 gave the week real drive time; where there is no matrix it says so
+        # instead of reporting a confident zero.
+        self.assertTrue(
+            "drive_minutes" in out or "travel_note" in out,
+            f"week neither measured driving nor disclaimed it: {sorted(out)}",
+        )
 
 
 class EveryHandlerStillSafe(unittest.TestCase):

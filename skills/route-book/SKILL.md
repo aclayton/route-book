@@ -69,9 +69,9 @@ Thursday.
 
 ## If something is not implemented
 
-This plugin is at **M2**. Clients, areas, geocoding, booking and day/week views
-work. Recommendations, calendar and voice return `{"error": "not_implemented"}`
-with the milestone that fills them.
+This plugin is at **M3**. Everything except the calendar feed (M4) and voice (M6)
+works, including `sched_recommend` — the one that answers "which day is best".
+`hermes sched` setup and the conversational layer are still to come.
 
 Relay that plainly and name the milestone. Do not invent an answer to fill the
 gap, and do not fall back to doing the scheduling by hand in chat.
