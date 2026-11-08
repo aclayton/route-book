@@ -15,6 +15,7 @@ changes.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import time
 
@@ -22,7 +23,7 @@ from plugins.plugin_storage import plugin_db, plugin_data_dir  # noqa: F401
 
 PLUGIN_NAME = "route-book"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -54,6 +55,24 @@ CREATE TABLE IF NOT EXISTS clients (
 CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
 CREATE INDEX IF NOT EXISTS idx_clients_city ON clients(city);
 
+CREATE TABLE IF NOT EXISTS appointments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id     INTEGER NOT NULL REFERENCES clients(id),
+    date          TEXT NOT NULL,              -- ISO YYYY-MM-DD, LOCAL date
+    start_local   TEXT NOT NULL,              -- HH:MM, local wall clock
+    tz            TEXT NOT NULL,              -- IANA zone, e.g. America/Toronto
+    duration_min  INTEGER NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'planned',
+    source        TEXT NOT NULL DEFAULT 'manual',
+    notes         TEXT NOT NULL DEFAULT '',
+    gcal_event_id TEXT,                       -- makes calendar sync idempotent (M4)
+    created_at    REAL NOT NULL,
+    updated_at    REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appt_date ON appointments(date);
+CREATE INDEX IF NOT EXISTS idx_appt_client ON appointments(client_id);
+
 CREATE TABLE IF NOT EXISTS areas (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL UNIQUE,
@@ -63,6 +82,22 @@ CREATE TABLE IF NOT EXISTS areas (
     created_at  REAL NOT NULL
 );
 """
+
+
+@contextlib.contextmanager
+def open_db():
+    """Handlers use this. Closes the connection on the way out.
+
+    `plugin_db()` returns a live connection and nothing closed it, so every tool
+    call leaked one. Under a long-running gateway that is a file-descriptor leak
+    that only shows up after hours of use — which is exactly when it is hardest
+    to attribute.
+    """
+    conn = connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def connect() -> sqlite3.Connection:
@@ -211,3 +246,63 @@ def set_area(conn, *, name, kind, payload="", bbox=None):
 
 def list_areas(conn):
     return conn.execute("SELECT * FROM areas ORDER BY name COLLATE NOCASE").fetchall()
+
+
+# ── Appointments ────────────────────────────────────────────────────────────
+
+def add_appointment(conn, *, client_id, date_iso, start_local, duration_min,
+                    tz, source="manual", notes=""):
+    """Insert an appointment. Returns its id.
+
+    Date is a LOCAL date and the zone is stored alongside it. Storing a bare UTC
+    instant instead would shift every appointment by an hour twice a year, and
+    the operator would discover it by arriving early.
+    """
+    now = time.time()
+    cur = conn.execute(
+        """INSERT INTO appointments
+             (client_id, date, start_local, tz, duration_min, source, notes,
+              created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (client_id, date_iso, start_local, tz, duration_min, source, notes, now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def appointments_on(conn, date_iso, include_cancelled=False):
+    """A day's appointments, in clock order."""
+    sql = """SELECT a.*, c.name AS client_name, c.city AS client_city
+             FROM appointments a JOIN clients c ON c.id = a.client_id
+             WHERE a.date = ?"""
+    if not include_cancelled:
+        sql += " AND a.status = 'planned'"
+    sql += " ORDER BY a.start_local"
+    return conn.execute(sql, (date_iso,)).fetchall()
+
+
+def appointments_between(conn, start_iso, end_iso, include_cancelled=False):
+    sql = """SELECT a.*, c.name AS client_name, c.city AS client_city
+             FROM appointments a JOIN clients c ON c.id = a.client_id
+             WHERE a.date >= ? AND a.date <= ?"""
+    if not include_cancelled:
+        sql += " AND a.status = 'planned'"
+    sql += " ORDER BY a.date, a.start_local"
+    return conn.execute(sql, (start_iso, end_iso)).fetchall()
+
+
+def cancel_appointment(conn, appointment_id):
+    cur = conn.execute(
+        "UPDATE appointments SET status='cancelled', updated_at=? WHERE id=?",
+        (time.time(), appointment_id),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def appointments_for_client(conn, client_id, include_cancelled=False):
+    sql = "SELECT * FROM appointments WHERE client_id = ?"
+    if not include_cancelled:
+        sql += " AND status = 'planned'"
+    sql += " ORDER BY date, start_local"
+    return conn.execute(sql, (client_id,)).fetchall()

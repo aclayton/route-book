@@ -52,6 +52,21 @@ def _install_storage_stub():
     sys.modules["plugins.plugin_storage"] = storage
 
 
+def fresh_db():
+    """Wipe the test database.
+
+    Without this the suite is order-dependent: a test that adds a client leaks it
+    into the next one, which then fails as *ambiguous* — an error that looks like
+    a bug in the code and isn't. Tests that share state silently stop testing.
+    """
+    import shutil
+    _install_storage_stub()
+    storage = sys.modules["plugins.plugin_storage"]
+    root = storage.plugin_data_dir("route-book")
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True, exist_ok=True)
+
+
 def load_plugin():
     """Import the plugin as a package and return the module namespace."""
     _install_storage_stub()
@@ -70,4 +85,13 @@ def load_plugin():
     module = importlib.util.module_from_spec(spec)
     sys.modules[PKG_NAME] = module
     spec.loader.exec_module(module)
+
+    # `__init__.py` imports only what `register()` needs, so submodules that are
+    # not on that path have to be pulled in explicitly for tests to reach them.
+    for sub in ("db", "geo", "tools", "nl", "schemas"):
+        try:
+            importlib.import_module(f"{PKG_NAME}.{sub}")
+        except ImportError:
+            pass
+
     return module

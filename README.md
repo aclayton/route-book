@@ -14,14 +14,14 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M1 — clients and geography.** Clients, service areas and geocoding are real
-and tested. Booking, recommendations, the calendar feed and voice are not.
+**M2 — booking.** Clients, service areas, geocoding, booking, and day/week
+views are real and tested. Recommendations, the calendar feed and voice are not.
 
 | Milestone | What it adds |
 |---|---|
 | M0 | Skeleton, tool surface, config defaults |
-| **M1** | Clients, service areas, geocoding — *you are here* |
-| M2 | Booking, day and week views |
+| M1 | Clients, service areas, geocoding |
+| **M2** | Booking, the date parser, day and week views — *you are here* |
 | M3 | **Recommendations** — travel matrix, insertion cost, explanations |
 | M4 | `.ics` calendar feed |
 | M5 | Conversational layer (`ctx.llm`, with a deterministic fallback) |

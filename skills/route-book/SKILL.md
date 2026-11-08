@@ -69,9 +69,9 @@ Thursday.
 
 ## If something is not implemented
 
-This plugin is at **M1**. Client records, service areas and geocoding work.
-Everything else — booking, day and week views, recommendations — returns
-`{"error": "not_implemented"}` with the milestone that fills it.
+This plugin is at **M2**. Clients, areas, geocoding, booking and day/week views
+work. Recommendations, calendar and voice return `{"error": "not_implemented"}`
+with the milestone that fills them.
 
 Relay that plainly and name the milestone. Do not invent an answer to fill the
 gap, and do not fall back to doing the scheduling by hand in chat.

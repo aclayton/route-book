@@ -156,9 +156,11 @@ class StubsAreHonest(unittest.TestCase):
     """An unimplemented tool must say so rather than return something plausible."""
 
     def test_unimplemented_tools_name_their_milestone(self):
-        for fn, milestone in ((tools.sched_book, "M2"),
-                              (tools.sched_recommend, "M3"),
-                              (tools.sched_ask, "M5")):
+        # Only the ones still unimplemented. sched_book moved to real behaviour
+        # in M2, so asserting it here would pin the test to a finished milestone.
+        for fn, milestone in ((tools.sched_recommend, "M3"),
+                              (tools.sched_ask, "M5"),
+                              (tools.sched_matrix_refresh, "M3")):
             with self.subTest(tool=fn.__name__):
                 out = json.loads(fn({}))
                 self.assertEqual(out["error"], "not_implemented")

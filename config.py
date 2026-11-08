@@ -19,6 +19,14 @@ SERVICE_BUFFER_MIN = 10
 # Two ceilings, because one is ambiguous: seven hours of cleaning plus two hours
 # of driving is a nine-hour day, and those are different numbers.
 
+# The working window and the base every day starts and ends at. M1's setup
+# wizard writes these; until then they are the defaults.
+WORKING_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+WORK_START = "08:00"       # local, HH:MM
+WORK_END = "17:00"
+HOME_BASE = ""             # set by setup; travel is measured from here
+TIMEZONE = "America/Toronto"   # IANA. Never a bare offset — DST moves twice a year.
+
 MAX_DAY_MINUTES = 540      # elapsed, door to door, including all driving
 MAX_SERVICE_MINUTES = 420  # hands-on working time only
 
