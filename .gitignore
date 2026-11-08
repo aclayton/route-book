@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# A real scheduler database must never be committed. If one appears in a repo,
+# the repo is a breach regardless of intent.
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+client-scheduler-data/
+
+# Local overrides and anything holding a secret
+.env
+*.local
+vault-ingest-token

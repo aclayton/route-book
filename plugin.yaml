@@ -1,0 +1,40 @@
+name: client-scheduler
+version: "0.1.0"
+manifest_version: 1
+api_version: 1
+description: >
+  Natural-language scheduling for a solo mobile trade. Keep a client list, take
+  a booking in a sentence, and get told which day costs the least travel while
+  still being a reasonable day to work.
+
+# No LLM and no API key are required for core function. The conversational layer
+# borrows the host's model through ctx.llm when the user has one configured.
+python_dependencies: []
+
+# Declared so the validator, the catalog, and a user reading the manifest before
+# install all agree on what this plugin adds to the tool registry.
+provides_tools:
+  - sched_client_add
+  - sched_client_list
+  - sched_area_set
+  - sched_book
+  - sched_recommend
+  - sched_day
+  - sched_week
+  - sched_move
+  - sched_cancel
+  - sched_matrix_refresh
+  - sched_ask
+
+# Privileged host surfaces this plugin asks for. Declared so the user gets a
+# single consent screen at install time rather than surprises later.
+capabilities:
+  - llm          # intent parsing via ctx.llm.complete_structured
+  - network      # geocoding (Nominatim) and routing (OSRM) — both optional
+
+# Nothing here is required to install; the plugin works fully offline except for
+# geocoding and drive times, which are disclosed in the README.
+requires_env: []
+
+skills:
+  - client-scheduler
