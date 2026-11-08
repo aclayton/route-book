@@ -1,5 +1,5 @@
 name: route-book
-version: "0.8.0"
+version: "0.9.0"
 manifest_version: 1
 api_version: 1
 description: >
@@ -25,6 +25,8 @@ provides_tools:
   - sched_cancel
   - sched_matrix_refresh
   - sched_ical_export
+  - sched_setup
+  - sched_export
   - sched_ask
 
 # Privileged host surfaces this plugin asks for. Declared so the user gets a

@@ -92,6 +92,28 @@ CREATE TABLE IF NOT EXISTS areas (
 """
 
 
+def as_dict(row):
+    """Accept a sqlite3.Row or a dict and return a dict.
+
+    sqlite3.Row supports row["key"] but NOT .get(), so code written against a
+    dict raises AttributeError the first time it is handed a row from the
+    database. This has now caused the same bug three times — in the engine, in
+    the tools and in the export — so it lives in one place and every reader of a
+    row goes through it.
+
+    A test asserts no module calls .get() on a row-shaped value, because the
+    fourth occurrence should fail the build rather than a customer's export.
+    """
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        return row
+    try:
+        return dict(row)
+    except (TypeError, ValueError):
+        return {}
+
+
 @contextlib.contextmanager
 def open_db():
     """Handlers use this. Closes the connection on the way out.

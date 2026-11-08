@@ -18,10 +18,10 @@ import json
 import re
 import time
 
-from . import ask, config, db, engine, geo, ical, matrix, nl, spoken
+from . import ask, config, db, engine, export, geo, ical, matrix, nl, setup, spoken
 
 PLUGIN = "route-book"
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 
 
 # The plugin context, captured at register() time. Held here because tool
@@ -767,6 +767,50 @@ def sched_ical_export(args, **kwargs):
         "Subscribe to this file, or import it. Apple Calendar, Google Calendar, "
         "Fastmail, Nextcloud and Outlook all read it — no account or key needed."
     )
+    return _ok(**result)
+
+
+def sched_setup(args, **kwargs):
+    """Report what is configured and name the ONE thing worth doing next.
+
+    A wizard that lists everything it needs is a form. Someone installing this is
+    standing between jobs with a phone in one hand, so this returns a single next
+    step with the reason it matters.
+    """
+    try:
+        with db.open_db() as conn:
+            report = setup.status(conn)
+    except Exception as exc:
+        return _err(f"could not check the setup: {exc}")
+
+    result = dict(report)
+    if not report["ready"]:
+        step = next(s for s in report["steps"] if s["key"] == report["next_step"])
+        result["next"] = {"key": step["key"], "title": step["title"],
+                          "why": step["why"], "detail": step.get("detail")}
+    return _ok(**result)
+
+
+def sched_export(args, **kwargs):
+    """Write the client list and appointment history to CSV and JSON.
+
+    Plain text, openable in anything. The point is that the operator's business
+    is not trapped in one program's private database, and that 'what happens if I
+    stop using this' has an answer before anyone has to ask it.
+    """
+    try:
+        with db.open_db() as conn:
+            result = export.export(
+                conn,
+                directory=args.get("directory") or None,
+                days_back=int(args.get("days_back") or 365),
+                days_ahead=int(args.get("days_ahead") or 365),
+            )
+    except Exception as exc:
+        return _err(f"could not write the export: {exc}")
+
+    result["note"] = ("No door codes, alarm codes or entry instructions are in "
+                      "this data — the plugin does not store them.")
     return _ok(**result)
 
 

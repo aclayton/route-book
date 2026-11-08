@@ -14,9 +14,8 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M6 — voice.** Say *"Bala, next Thursday, 3 hrs"* to Siri and hear it read
-back before it is written. No speech-to-text or text-to-speech to install — Siri
-does both. See `docs/VOICE.md`.
+**Complete.** Setup, clients, booking, recommendations, a subscribable `.ics`
+feed, natural-language routing, voice, and data export. 192 tests, all offline.
 
 | Milestone | What it adds |
 |---|---|
@@ -26,7 +25,8 @@ does both. See `docs/VOICE.md`.
 | **M3** | Recommendations — travel matrix, insertion cost, explanations |
 | **M4** | Calendar — `.ics` feed, subscribable everywhere |
 | **M5** | Conversational — one sentence in, one tool call out |
-| **M6** | **Voice** — ask Siri, hear the answer, confirm out loud — *you are here* |
+| **M6** | Voice — ask Siri, hear the answer, confirm out loud |
+| **M7** | **Setup, export, docs** — *you are here* |
 | M4 | `.ics` calendar feed |
 | M5 | Conversational layer (`ctx.llm`, with a deterministic fallback) |
 | M6 | Siri voice |
@@ -89,6 +89,48 @@ not working time, and a slack score so a day survives one job running long.
   what day it is.
 - **No door codes, no alarm codes, ever.** A scheduling tool does not need them,
   and storing them turns a convenience into a liability.
+
+## Setting it up
+
+```
+hermes sched_setup
+```
+
+It tells you **the one thing to do next**, and why it matters. Not a checklist —
+a checklist gets skimmed, and someone installing this is standing between jobs
+with a phone in one hand.
+
+The three that matter:
+
+1. **A home base.** Where you start and end the day. Without it a day has no
+   start or end point, so every travel time is meaningless.
+2. **A service area.** Which towns you cover. Travel times only exist between
+   located clients, and an area lets an address be checked before it becomes a
+   wrong coordinate.
+3. **Two clients with addresses.** Two is the minimum for any routing at all —
+   one located client cannot make a matrix. The wizard says "partial" rather than
+   "done" at one, because a routing engine that silently reports nothing is worse
+   than one that admits what it is missing.
+
+Run it again whenever something changes. A home base moves, an area changes, a
+new client needs an address. **Setup is a state you return to, not a door you
+walk through once.**
+
+## Getting your data out
+
+```
+hermes sched_export
+```
+
+Writes `clients.csv`, `appointments.csv` and one JSON bundle — plain text,
+openable in anything. Your customer list and visit history are your business, and
+they should not be trapped in one program's database. It is also the honest
+answer to *"what happens if I stop using this"*, which is worth answering before
+anyone has to ask.
+
+**No door codes, alarm codes or entry instructions are in an export, because the
+plugin never stores them.** That is a design rule, not a disclaimer — the export
+cannot leak what was never written down.
 
 ## Asking by voice
 

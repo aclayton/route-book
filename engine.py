@@ -393,20 +393,9 @@ def score_day(stops, client_id, travel, client=None, day_index=None, home_id="ho
 # ── Recommendations ─────────────────────────────────────────────────────────
 
 def _as_mapping(row):
-    """Accept a sqlite3.Row or a dict, and return a dict.
-
-    sqlite3.Row supports row["key"] but NOT .get(), so code that works with a
-    dict raises AttributeError the first time it is handed a row. Normalising at
-    the boundary means the rest of the engine has one type to reason about.
-    """
-    if row is None:
-        return {}
-    if isinstance(row, dict):
-        return row
-    try:
-        return dict(row)
-    except (TypeError, ValueError):
-        return {}
+    """One implementation, in db, so the third duplicate of this cannot drift."""
+    from .db import as_dict
+    return as_dict(row)
 
 
 def recommend(client_id, client, days, travel, home_id="home", opts=None):

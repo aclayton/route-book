@@ -288,3 +288,40 @@ SCHED_ICAL_EXPORT = {
         "required": [],
     },
 }
+
+
+SCHED_SETUP = {
+    "name": "sched_setup",
+    "description": (
+        "Check what is configured and find out what to do next. Use when the "
+        "plugin seems to be missing something — no travel times, no "
+        "recommendations, nothing to route between — or when setting it up for "
+        "the first time. Returns every step's state and the ONE thing worth "
+        "doing next, with the reason it matters."
+    ),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+SCHED_EXPORT = {
+    "name": "sched_export",
+    "description": (
+        "Write the client list and the appointment history to CSV and JSON. Use "
+        "when the operator wants their data out — for a spreadsheet, a backup, or "
+        "because they are moving on from this tool. Plain text files."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "directory": {
+                "type": "string",
+                "description": "Where to write. Omit for the plugin's own folder.",
+            },
+            "days_back": {"type": "integer",
+                          "description": "How far back to include. Default 365."},
+            "days_ahead": {"type": "integer",
+                           "description": "How far ahead to include. Default 365."},
+        },
+        "required": [],
+    },
+}

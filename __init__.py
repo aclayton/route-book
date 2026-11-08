@@ -1,6 +1,6 @@
 """route-book — a Hermes plugin for travel-aware scheduling.
 
-Status: M5 — conversational. The plugin registers its full tool surface and validates
+Status: complete — M0 through M7. The plugin registers its full tool surface and validates
 clean, but the handlers are stubs. See docs/DESIGN.md for what each milestone
 adds.
 
@@ -36,6 +36,8 @@ TOOL_NAMES = [
     "sched_cancel",
     "sched_matrix_refresh",
     "sched_ical_export",
+    "sched_setup",
+    "sched_export",
     "sched_ask",
 ]
 

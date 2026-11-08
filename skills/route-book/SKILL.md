@@ -69,7 +69,7 @@ Thursday.
 
 ## If something is not implemented
 
-This plugin is at **M6**. Everything works. `sched_ask` takes a sentence —
+This plugin is **complete** — M0 through M7. `sched_ask` takes a sentence —
 "bala, next Thursday, 3 hrs" — and routes it to the right tool; pass
 `format="spoken"` when the reply will be read aloud, and expect a booking to be
 read back and confirmed with `confirm=<token>` before it is written.
