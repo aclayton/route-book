@@ -10,7 +10,7 @@ venv/
 *.sqlite
 *.sqlite3
 *.csv
-client-scheduler-data/
+route-book-data/
 
 # Local overrides and anything holding a secret
 .env

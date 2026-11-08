@@ -15,7 +15,7 @@ of the interface is the part worth arguing about early.
 
 import json
 
-PLUGIN = "client-scheduler"
+PLUGIN = "route-book"
 VERSION = "0.1.0"
 
 

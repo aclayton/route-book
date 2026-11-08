@@ -1,5 +1,5 @@
 ---
-name: client-scheduler
+name: route-book
 description: "Use when scheduling a job for a mobile trade — booking, finding the best day, or reading a day plan."
 version: 0.1.0
 license: MIT

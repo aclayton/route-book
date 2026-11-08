@@ -1,4 +1,4 @@
-"""client-scheduler — a Hermes plugin for travel-aware scheduling.
+"""route-book — a Hermes plugin for travel-aware scheduling.
 
 Status: M0 skeleton. The plugin registers its full tool surface and validates
 clean, but the handlers are stubs. See docs/DESIGN.md for what each milestone
@@ -48,17 +48,17 @@ def register(ctx):
     for name in TOOL_NAMES:
         ctx.register_tool(
             name=name,
-            toolset="client_scheduler",
+            toolset="route_book",
             schema=getattr(schemas, name.upper()),
             handler=getattr(tools, name),
         )
 
     # The skill teaches the agent WHEN to reach for this plugin and how to ask a
     # clarifying question rather than guessing. Registered as
-    # `client-scheduler:client-scheduler`.
+    # `route-book:route-book`.
     try:
-        ctx.register_skill("client-scheduler", "skills/client-scheduler")
+        ctx.register_skill("route-book", "skills/route-book")
     except Exception as exc:  # pragma: no cover - registration is optional
         logger.debug("skill registration skipped: %s", exc)
 
-    logger.info("client-scheduler: registered %d tools", len(TOOL_NAMES))
+    logger.info("route-book: registered %d tools", len(TOOL_NAMES))

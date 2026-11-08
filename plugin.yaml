@@ -1,4 +1,4 @@
-name: client-scheduler
+name: route-book
 version: "0.1.0"
 manifest_version: 1
 api_version: 1
@@ -37,4 +37,4 @@ capabilities:
 requires_env: []
 
 skills:
-  - client-scheduler
+  - route-book

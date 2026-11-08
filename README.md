@@ -1,4 +1,4 @@
-# client-scheduler
+# route-book
 
 A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin for
 scheduling a solo mobile trade — cleaning, window washing, pet care, landscaping,
@@ -93,8 +93,8 @@ Not yet — this is pre-release and not on the catalog.
 To develop against it, point a Hermes install at the checkout:
 
 ```bash
-hermes plugins validate /path/to/client-scheduler
-hermes plugins doctor   /path/to/client-scheduler   # loads it in a temp HERMES_HOME
+hermes plugins validate /path/to/route-book
+hermes plugins doctor   /path/to/route-book   # loads it in a temp HERMES_HOME
 ```
 
 ## License
