@@ -30,7 +30,7 @@ from a timestamp will duplicate every event on each export.
 from __future__ import annotations
 
 import hashlib
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from . import config, db
 
@@ -145,7 +145,7 @@ def _event(appt, tzid: str):
     lines = [
         "BEGIN:VEVENT",
         f"UID:{_uid(appt['id'], date_iso, start_local)}",
-        f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
         f"DTSTART;TZID={tzid}:{start.strftime('%Y%m%dT%H%M%S')}",
         f"DTEND;TZID={tzid}:{end.strftime('%Y%m%dT%H%M%S')}",
         f"SUMMARY:{_escape(summary)}",
@@ -219,7 +219,7 @@ def _event_floating(appt):
     return [
         "BEGIN:VEVENT",
         f"UID:{_uid(appt['id'], date_iso, start_local)}",
-        f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
         f"DTSTART:{start.strftime('%Y%m%dT%H%M%S')}",
         f"DTEND:{end.strftime('%Y%m%dT%H%M%S')}",
         f"SUMMARY:{_escape(name + ' — job')}",

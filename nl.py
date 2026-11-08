@@ -438,6 +438,7 @@ def parse_request(text, today, clients):
 
     when = None
     duration = None
+    when_text = None
 
     # Everything after the first comma is treated as the detail clause, which is
     # how the shorthand is actually spoken.
@@ -461,14 +462,27 @@ def parse_request(text, today, clients):
             w = parse_when(chunk, today)
             if w:
                 when = w
+                # Keep the words the date came FROM. A read-back that says
+                # "Thursday the twelfth of November" sounds authoritative and
+                # confirms nothing; "next Thursday" is what a mishearing shows
+                # up in.
+                when_text = chunk
                 continue
 
-    # If the detail clause gave nothing, try the whole string for a date.
+    # If the detail clause gave nothing, try the whole string for a date — and
+    # try PHRASES, not just single words. "in two weeks" is three words, so a
+    # word-by-word search never sees it; the phrase has to be offered intact.
     if when is None:
-        for word in re.split(r"[\s,]+", t):
-            w = parse_when(word, today)
-            if w:
-                when = w
+        words = re.split(r"[\s,]+", t)
+        for size in (4, 3, 2, 1):
+            for start in range(len(words) - size + 1):
+                phrase = " ".join(words[start:start + size])
+                w = parse_when(phrase, today)
+                if w:
+                    when = w
+                    when_text = phrase
+                    break
+            if when is not None:
                 break
 
     # The shorthand — "bala, next Thursday, 3 hrs" — carries no verb word at all.
@@ -483,6 +497,9 @@ def parse_request(text, today, clients):
         "verb": verb,
         "clients": [dict(c) for c in matches],
         "when": when.isoformat() if when else None,
+        # The expression, verbatim, so a read-back can echo what was actually
+        # said rather than an authoritative-sounding resolved date.
+        "when_text": when_text,
         "duration_min": duration,
         "raw": text,
     }

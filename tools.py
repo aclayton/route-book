@@ -18,10 +18,10 @@ import json
 import re
 import time
 
-from . import ask, config, db, engine, geo, ical, matrix, nl
+from . import ask, config, db, engine, geo, ical, matrix, nl, spoken
 
 PLUGIN = "route-book"
-VERSION = "0.6.0"
+VERSION = "0.8.0"
 
 
 # The plugin context, captured at register() time. Held here because tool
@@ -778,8 +778,16 @@ def sched_ask(args, **kwargs):
     rather than guessing: a wrong booking costs more than a question.
     """
     text = (args.get("text") or "").strip()
+    spoken = (args.get("format") or "").lower() == "spoken"
+
+    # A spoken yes arrives as its own call, carrying the token from the read-back.
+    # It is handled before anything is parsed: "yes" is not a sentence to classify.
+    confirm = (args.get("confirm") or "").strip()
+    if confirm:
+        return _confirm_spoken(confirm, spoken)
+
     if not text:
-        return _err("what would you like me to do?")
+        return _spoken_or(spoken, _err("what would you like me to do?"))
 
     today = _today()
 
@@ -795,17 +803,17 @@ def sched_ask(args, **kwargs):
     _LAST_SOURCE = parsed.get("source")
 
     if parsed["verb"] == "unknown":
-        return _err(
+        return _spoken_or(spoken, _err(
             f"I could not tell what to do with {text!r}.",
             tried="booking, recommendations, day and week views, moving, cancelling",
             understood=parsed.get("clients") or None,
-        )
+        ))
 
     missing = ask.missing_slots(parsed)
     if missing:
         # Ask, and hand back everything already understood so the operator only
         # has to supply the gap.
-        return _ok(
+        return _spoken_or(spoken, _ok(
             status="needs_clarification",
             question=ask.clarify(parsed, missing),
             missing=missing,
@@ -816,12 +824,12 @@ def sched_ask(args, **kwargs):
                 "when_text": parsed.get("when_text"),
             },
             source=parsed.get("source"),
-        )
+        ))
 
-    return _dispatch(parsed, text)
+    return _dispatch(parsed, text, spoken=spoken)
 
 
-def _dispatch(parsed, text):
+def _dispatch(parsed, text, spoken=False):
     """Call the right tool with the resolved slots.
 
     The date was resolved in Python from the expression the operator used, so by
@@ -837,7 +845,13 @@ def _dispatch(parsed, text):
         call = {"client": client_name, "when": when}
         if duration:
             call["duration"] = f"{duration} min"
-        return _relay("sched_book", call)
+        # A VOICE booking is read back before it is written. Not because the
+        # parser is unreliable but because dictation is: a misheard date creates
+        # a real appointment in a real customer's week, and the person who would
+        # catch it is listening, not reading.
+        if spoken and config.VOICE_CONFIRM_BOOKINGS:
+            return _stage_spoken(parsed, client_name, when, duration)
+        return _relay("sched_book", call, spoken=spoken)
 
     if verb == "recommend":
         # "recommend the best day for bala in two weeks" — the date is the window
@@ -845,25 +859,25 @@ def _dispatch(parsed, text):
         call = {"client": client_name}
         if parsed.get("when_text") or when:
             call["within"] = parsed.get("when_text") or when
-        return _relay("sched_recommend", call)
+        return _relay("sched_recommend", call, spoken=spoken)
 
     if verb == "list":
-        return _relay_list(parsed, when, client_name)
+        return _relay_list(parsed, when, client_name, spoken=spoken)
 
     if verb == "list_clients":
-        return _relay("sched_client_list", {})
+        return _relay("sched_client_list", {}, spoken=spoken)
 
     if verb == "move":
-        return _relay("sched_move", {"client": client_name, "to_when": when})
+        return _relay("sched_move", {"client": client_name, "to_when": when}, spoken=spoken)
 
     if verb == "cancel":
         call = {"client": client_name}
         if when:
             call["when"] = when
-        return _relay("sched_cancel", call)
+        return _relay("sched_cancel", call, spoken=spoken)
 
     if verb == "export_calendar":
-        return _relay("sched_ical_export", {})
+        return _relay("sched_ical_export", {}, spoken=spoken)
 
     if verb == "add_client":
         # Names and addresses cannot come from a sentence we did not fully parse,
@@ -878,7 +892,58 @@ def _dispatch(parsed, text):
     return _err(f"I understood {verb!r} but cannot act on it yet.")
 
 
-def _relay_list(parsed, when, client_name):
+def _spoken_or(spoken, payload):
+    """Return a spoken sentence instead of a payload, when asked for speech."""
+    import json as _json
+    if not spoken:
+        return payload
+    try:
+        data = _json.loads(payload)
+    except (ValueError, TypeError):
+        return payload
+    return _json.dumps({"status": data.get("status", "spoken"),
+                        "reply": spoken_render(data, max_items=config.VOICE_MAX_ITEMS),
+                        "raw_status": data.get("status")})
+
+
+def _stage_spoken(parsed, client_name, when_iso, duration_min):
+    """Hold a spoken booking and read it back. Writes nothing."""
+    client_row = None
+    try:
+        with db.open_db() as conn:
+            matches = nl.find_named_clients(client_name or "", db.find_clients(conn))
+            if matches:
+                client_row = dict(matches[0])
+    except Exception as exc:
+        return _err(f"could not read the client list: {exc}")
+
+    if client_row is None:
+        return _err(f"no client matches {client_name!r}")
+
+    token, read_back = spoken.stage_booking(parsed, client_row, when_iso, duration_min)
+    return _ok(status="needs_confirmation", token=token, read_back=read_back,
+               client={"id": client_row.get("id"), "name": client_row.get("name")},
+               date=when_iso, note="Nothing is booked until you confirm.")
+
+
+def _confirm_spoken(token, spoken_mode):
+    """Commit a staged voice booking, or say why not."""
+    staged = spoken.take_booking(token)
+    if staged is None:
+        message = ("That confirmation has expired or I did not have anything "
+                   "waiting. Say the booking again and I will read it back.")
+        return _spoken_or(spoken_mode, _err(message))
+    if staged is not True and not staged.get("client"):
+        return _spoken_or(spoken_mode, _err("I lost the details for that booking."))
+
+    client_row = staged["client"]
+    call = {"client": client_row.get("name"), "when": staged["when"]}
+    if staged.get("duration_min"):
+        call["duration"] = f"{staged['duration_min']} min"
+    return _relay("sched_book", call, spoken=spoken_mode)
+
+
+def _relay_list(parsed, when, client_name, spoken=False):
     """`list` covers three questions. The slots decide which.
 
     "what is on today" is a day, "what does my week look like" is a week, and
@@ -888,13 +953,18 @@ def _relay_list(parsed, when, client_name):
     text = (parsed.get("raw") or "").lower()
 
     if re.search(r"\bclients?\b|\bcustomers?\b", text):
-        return _relay("sched_client_list", {})
+        return _relay("sched_client_list", {}, spoken=spoken)
     if when:
-        return _relay("sched_day", {"when": when})
-    return _relay("sched_week", {"start": "today"})
+        return _relay("sched_day", {"when": when}, spoken=spoken)
+    return _relay("sched_week", {"start": "today"}, spoken=spoken)
 
 
-def _relay(tool_name, call_args):
+def spoken_render(payload, max_items=None):
+    """Render a payload as speech. A thin wrapper so tests can patch one name."""
+    return spoken.render(payload, max_items=max_items)
+
+
+def _relay(tool_name, call_args, spoken=False):
     """Call another tool in this plugin and unwrap it.
 
     A relayed result is returned as the tool's own payload, tagged with the call
@@ -920,4 +990,11 @@ def _relay(tool_name, call_args):
         # conversational booking is traceable to the rules or to the model.
         if _LAST_SOURCE:
             payload.setdefault("source", _LAST_SOURCE)
+        if spoken:
+            return _json.dumps({
+                "reply": spoken_render(payload, max_items=config.VOICE_MAX_ITEMS),
+                "routed_to": tool_name,
+                "raw_status": payload.get("status"),
+                "underlying": payload,
+            })
     return _json.dumps(payload)

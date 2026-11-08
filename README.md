@@ -14,9 +14,9 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M5 — conversational.** `sched_ask` takes a sentence and routes it. The rules
-run first and the model only sees what they cannot parse, so most requests never
-leave the machine. Voice is left.
+**M6 — voice.** Say *"Bala, next Thursday, 3 hrs"* to Siri and hear it read
+back before it is written. No speech-to-text or text-to-speech to install — Siri
+does both. See `docs/VOICE.md`.
 
 | Milestone | What it adds |
 |---|---|
@@ -25,7 +25,8 @@ leave the machine. Voice is left.
 | M2 | Booking, the date parser, day and week views |
 | **M3** | Recommendations — travel matrix, insertion cost, explanations |
 | **M4** | Calendar — `.ics` feed, subscribable everywhere |
-| **M5** | **Conversational** — one sentence in, one tool call out — *you are here* |
+| **M5** | Conversational — one sentence in, one tool call out |
+| **M6** | **Voice** — ask Siri, hear the answer, confirm out loud — *you are here* |
 | M4 | `.ics` calendar feed |
 | M5 | Conversational layer (`ctx.llm`, with a deterministic fallback) |
 | M6 | Siri voice |
@@ -88,6 +89,26 @@ not working time, and a slack score so a day survives one job running long.
   what day it is.
 - **No door codes, no alarm codes, ever.** A scheduling tool does not need them,
   and storing them turns a convenience into a liability.
+
+## Asking by voice
+
+```
+"Bala, next Thursday, 3 hrs"
+"Recommend the best day for Bala in two weeks"
+"What does my week look like"
+```
+
+Say those to Siri and hear the answer. Two Shortcuts, ten minutes to build, no
+speech-to-text or text-to-speech to install — Siri does both. The full build is in
+[`docs/VOICE.md`](docs/VOICE.md).
+
+**A spoken booking is read back before it is written:**
+
+> *"That is Bala Construction, next Thursday, for 3 hours. Should I book it?"*
+
+Say yes and it books. Say nothing and nothing happens. Dictation mishears, and a
+misheard date puts a real appointment in a real customer's week — you are listening,
+not reading, so hearing it back is your only chance to catch it.
 
 ## Getting the schedule into a calendar
 

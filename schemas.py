@@ -227,6 +227,23 @@ SCHED_ASK = {
     "parameters": {
         "type": "object",
         "properties": {
+            "format": {
+                "type": "string",
+                "enum": ["json", "spoken"],
+                "description": (
+                    "Use \"spoken\" when the reply will be read aloud — Siri, a "
+                    "phone, a car. Returns one hearable sentence instead of a "
+                    "payload. A spoken reply cannot be re-read, so it says less."
+                ),
+            },
+            "confirm": {
+                "type": "string",
+                "description": (
+                    "The token from a voice read-back. Pass it back with the "
+                    "operator's yes to actually book. Bookings made by voice are "
+                    "staged and read back first, so this is how they commit."
+                ),
+            },
             "text": {"type": "string", "description": "The operator's request, verbatim."},
             "spoken": {
                 "type": "boolean",

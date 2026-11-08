@@ -84,6 +84,16 @@ ICAL_TITLE_MODE = "full"
 # How far ahead the feed covers.
 ICAL_DAYS_AHEAD = 180
 
+# Read back a spoken booking before writing it. On by default: dictation
+# mishears, and a misheard date creates a real appointment in a real customer's
+# week. The person who would catch it is listening, not reading, so the read-back
+# is the only chance to catch it.
+VOICE_CONFIRM_BOOKINGS = True
+
+# How long a staged booking waits for its yes. Short on purpose — a confirmation
+# answered ten minutes later is one nobody remembers giving.
+VOICE_CONFIRM_TTL_SECONDS = 180
+
 VOICE_MAX_ITEMS = 3          # items in a spoken list before summarising
 VOICE_RELATIVE_TIMES = True  # "in 25 minutes" rather than "at 09:40"
 VOICE_HOT_PATH_TIMEOUT_MS = 1500  # Siri abandons slow Shortcuts
