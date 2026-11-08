@@ -22,7 +22,8 @@ subscribe to or import. No OAuth, no key, nothing to register. Voice is left.
 | M0 | Skeleton, tool surface, config defaults |
 | M1 | Clients, service areas, geocoding |
 | M2 | Booking, the date parser, day and week views |
-| **M3** | **Recommendations** — travel matrix, insertion cost, explanations — *you are here* |
+| **M3** | Recommendations — travel matrix, insertion cost, explanations |
+| **M4** | **Calendar** — `.ics` feed, subscribable everywhere — *you are here* |
 | M4 | `.ics` calendar feed |
 | M5 | Conversational layer (`ctx.llm`, with a deterministic fallback) |
 | M6 | Siri voice |
@@ -85,6 +86,27 @@ not working time, and a slack score so a day survives one job running long.
   what day it is.
 - **No door codes, no alarm codes, ever.** A scheduling tool does not need them,
   and storing them turns a convenience into a liability.
+
+## Getting the schedule into a calendar
+
+```
+hermes sched_ical_export          # writes route-book.ics
+```
+
+Point your calendar app at the file, or import it. Apple Calendar, Google
+Calendar, Fastmail, Nextcloud and Outlook all read it. There is no account to
+create and no key to store — which is the entire reason this is the calendar
+story for v1 rather than an API integration.
+
+**No street addresses are ever written into an event.** The calendar says who and
+when; where stays on the machine that made the file. Set `ICAL_TITLE_MODE:
+initials` and it says `H — job` instead of a surname — worth knowing if the feed
+syncs through a third-party server, because on a subscribed feed the customer
+name travels with it.
+
+By default the file stays in the plugin's own data directory, because copying a
+customer list to every device the operator owns is not a decision to make by
+accident. Set `ICAL_PATH` to a synced folder to put it on your phone.
 
 ## Install
 
