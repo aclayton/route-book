@@ -1,6 +1,6 @@
 """route-book — a Hermes plugin for travel-aware scheduling.
 
-Status: M0 skeleton. The plugin registers its full tool surface and validates
+Status: M5 — conversational. The plugin registers its full tool surface and validates
 clean, but the handlers are stubs. See docs/DESIGN.md for what each milestone
 adds.
 
@@ -46,6 +46,10 @@ def register(ctx):
     Called exactly once at startup. If this raises, the plugin is disabled and
     Hermes carries on — so it must not reference anything unavailable.
     """
+    # The conversational layer needs ctx.llm, and handlers only receive `args`,
+    # so the context is handed to the tool layer here.
+    tools.bind_context(ctx)
+
     for name in TOOL_NAMES:
         ctx.register_tool(
             name=name,

@@ -353,6 +353,34 @@ _LIST_PATTERNS = [
 ]
 
 
+# Patterns for intents the original rules had no words for. Kept beside
+# parse_verb so the whole vocabulary is in one place.
+# "what's on today", "what does tomorrow look like" — a question about the diary
+# with no verb word at all. Without this the rules return unknown and the whole
+# sentence goes to the model, which is both slower and less private.
+_DIARY_QUESTION_PATTERNS = [
+    r"\bwhat.?s (on|happening|booked|going on)\b",
+    r"\bwhat (is|have i got|do i have)\b.{0,20}\b(on|booked|tomorrow|today)\b",
+    r"\bmy (day|week|schedule)\b",
+]
+
+_CLIENT_PATTERNS = [
+    r"\b(list|show|who).{0,12}\bclients?\b",
+    r"\bmy clients\b",
+    r"\bcustomer list\b",
+]
+
+_CALENDAR_PATTERNS = [
+    r"\b(ical|ics|calendar feed)\b",
+    r"\b(subscribe|export).{0,12}\bcalendar\b",
+]
+
+_DIARY_PATTERNS = [
+    r"\b(add|new|create).{0,12}\bclient\b",
+    r"\bnew customer\b",
+]
+
+
 def parse_verb(text):
     """Classify the request. Returns one of:
 
@@ -371,6 +399,20 @@ def parse_verb(text):
     for p in _RECOMMEND_PATTERNS:
         if re.search(p, t):
             return "recommend"
+    for p in _CLIENT_PATTERNS:
+        if re.search(p, t):
+            return "list_clients"
+    for p in _CALENDAR_PATTERNS:
+        if re.search(p, t):
+            return "export_calendar"
+    for p in _DIARY_PATTERNS:
+        if re.search(p, t):
+            # "add a client" is a write, so it is checked before the generic
+            # booking patterns — otherwise "add" would classify it as a booking.
+            return "add_client"
+    for p in _DIARY_QUESTION_PATTERNS:
+        if re.search(p, t):
+            return "list"
     for p in _LIST_PATTERNS:
         if re.search(p, t):
             return "list"

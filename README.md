@@ -14,8 +14,9 @@ costs the least travel while still being a reasonable day to work.**
 
 ## Status
 
-**M4 — calendar.** `sched_ical_export` writes a `.ics` feed any calendar app can
-subscribe to or import. No OAuth, no key, nothing to register. Voice is left.
+**M5 — conversational.** `sched_ask` takes a sentence and routes it. The rules
+run first and the model only sees what they cannot parse, so most requests never
+leave the machine. Voice is left.
 
 | Milestone | What it adds |
 |---|---|
@@ -23,7 +24,8 @@ subscribe to or import. No OAuth, no key, nothing to register. Voice is left.
 | M1 | Clients, service areas, geocoding |
 | M2 | Booking, the date parser, day and week views |
 | **M3** | Recommendations — travel matrix, insertion cost, explanations |
-| **M4** | **Calendar** — `.ics` feed, subscribable everywhere — *you are here* |
+| **M4** | Calendar — `.ics` feed, subscribable everywhere |
+| **M5** | **Conversational** — one sentence in, one tool call out — *you are here* |
 | M4 | `.ics` calendar feed |
 | M5 | Conversational layer (`ctx.llm`, with a deterministic fallback) |
 | M6 | Siri voice |

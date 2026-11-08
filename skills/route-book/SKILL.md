@@ -69,9 +69,10 @@ Thursday.
 
 ## If something is not implemented
 
-This plugin is at **M4**. Everything works except voice (M6) and the
-conversational layer (M5). `sched_recommend` answers "which day is best";
-`sched_ical_export` puts the schedule into any calendar app with no account.
+This plugin is at **M5**. Everything works except voice (M6). `sched_ask` takes
+a sentence — "bala, next Thursday, 3 hrs" — and routes it to the right tool.
+`sched_recommend` answers "which day is best"; `sched_ical_export` puts the
+schedule into any calendar app with no account.
 
 Relay that plainly and name the milestone. Do not invent an answer to fill the
 gap, and do not fall back to doing the scheduling by hand in chat.

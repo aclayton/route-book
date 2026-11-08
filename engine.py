@@ -331,7 +331,8 @@ def score_day(stops, client_id, travel, client=None, day_index=None, home_id="ho
     reasons.append(f"adds {cost} min of driving")
 
     # Anchor: does this day already have work in the same city?
-    client_city = (client or {}).get("city") or ""
+    client = _as_mapping(client)
+    client_city = client.get("city") or ""
     cities = {s.city for s in stops if s.city}
     anchor_term = 1.0 if (client_city and client_city in cities) else 0.0
     if anchor_term:
@@ -391,6 +392,23 @@ def score_day(stops, client_id, travel, client=None, day_index=None, home_id="ho
 
 # ── Recommendations ─────────────────────────────────────────────────────────
 
+def _as_mapping(row):
+    """Accept a sqlite3.Row or a dict, and return a dict.
+
+    sqlite3.Row supports row["key"] but NOT .get(), so code that works with a
+    dict raises AttributeError the first time it is handed a row. Normalising at
+    the boundary means the rest of the engine has one type to reason about.
+    """
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        return row
+    try:
+        return dict(row)
+    except (TypeError, ValueError):
+        return {}
+
+
 def recommend(client_id, client, days, travel, home_id="home", opts=None):
     """Rank candidate days for one job.
 
@@ -402,6 +420,8 @@ def recommend(client_id, client, days, travel, home_id="home", opts=None):
     question the operator will ask, and an unexplained absence is worse than a
     stated reason.
     """
+
+    client = _as_mapping(client)
     opts = opts or {}
     duration = opts.get("duration") or client.get("default_duration_min") or 180
     window = opts.get("window") or client.get("preferred_window") or "any"

@@ -33,10 +33,10 @@ _GEO_SEQ = [43.0 + i * 0.05 for i in range(50)]
 
 
 def _stub_matrix(monkey, minutes=12):
-    """Replace the network matrix with a fixed, deterministic one.
+    """Override the matrix stub with a different fixed value.
 
-    The suite must not call OSRM: it is a public demo instance with rate limits,
-    and a test that depends on it fails for reasons unrelated to the code.
+    `_bootstrap` already installs one, so this exists only for a test that needs
+    a different constant — not to keep the suite offline.
     """
     def fake_build(points, force=False):
         n = len(points)

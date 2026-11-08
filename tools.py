@@ -15,12 +15,31 @@ so, naming the milestone that fills them.
 from __future__ import annotations
 
 import json
+import re
 import time
 
-from . import config, db, engine, geo, ical, matrix, nl
+from . import ask, config, db, engine, geo, ical, matrix, nl
 
 PLUGIN = "route-book"
-VERSION = "0.5.0"
+VERSION = "0.6.0"
+
+
+# The plugin context, captured at register() time. Held here because tool
+# handlers receive only `args`, and the conversational layer needs the `ctx.llm`
+# handle. Defaults to None, and every use is guarded, so the plugin still runs on
+# a host with no model configured.
+_CONTEXT = None
+
+# Which parser produced the call currently being relayed. Set by sched_ask,
+# read by _relay. A module global is ugly; threading a parameter through every
+# tool signature would be worse.
+_LAST_SOURCE = None
+
+
+def bind_context(ctx):
+    """Hand the runtime context to the tool layer. Called once from register()."""
+    global _CONTEXT
+    _CONTEXT = ctx
 
 
 def _ok(**payload):
@@ -712,7 +731,7 @@ def sched_recommend(args, **kwargs):
     result = engine.recommend(
         client["id"], dict(client), days, travel,
         opts={"duration": nl.parse_duration(args.get("duration")),
-              "window": client.get("preferred_window")},
+              "window": client["preferred_window"]},
     )
 
     result["client"] = {"id": client["id"], "name": client["name"], "city": client["city"]}
@@ -752,5 +771,153 @@ def sched_ical_export(args, **kwargs):
 
 
 def sched_ask(args, **kwargs):
-    return _stub("sched_ask", "M5",
-                 "Routes natural language to the tools above via ctx.llm, with a deterministic fallback.")
+    """Route one sentence in natural language to the right tool.
+
+    The rules run first and the model only sees what they could not parse, so
+    most requests never leave the machine. Where a slot is missing this ASKS
+    rather than guessing: a wrong booking costs more than a question.
+    """
+    text = (args.get("text") or "").strip()
+    if not text:
+        return _err("what would you like me to do?")
+
+    today = _today()
+
+    try:
+        with db.open_db() as conn:
+            clients = db.find_clients(conn)
+    except Exception as exc:
+        return _err(f"could not read the client list: {exc}")
+
+    parsed = ask.understand(text, today, clients, ctx=_CONTEXT)
+
+    global _LAST_SOURCE
+    _LAST_SOURCE = parsed.get("source")
+
+    if parsed["verb"] == "unknown":
+        return _err(
+            f"I could not tell what to do with {text!r}.",
+            tried="booking, recommendations, day and week views, moving, cancelling",
+            understood=parsed.get("clients") or None,
+        )
+
+    missing = ask.missing_slots(parsed)
+    if missing:
+        # Ask, and hand back everything already understood so the operator only
+        # has to supply the gap.
+        return _ok(
+            status="needs_clarification",
+            question=ask.clarify(parsed, missing),
+            missing=missing,
+            understood={
+                "intent": parsed["verb"],
+                "client": parsed["clients"][0]["name"] if parsed.get("clients") else None,
+                "when": parsed.get("when"),
+                "when_text": parsed.get("when_text"),
+            },
+            source=parsed.get("source"),
+        )
+
+    return _dispatch(parsed, text)
+
+
+def _dispatch(parsed, text):
+    """Call the right tool with the resolved slots.
+
+    The date was resolved in Python from the expression the operator used, so by
+    the time anything is written the ambiguity is already gone.
+    """
+    verb = parsed["verb"]
+    clients = parsed.get("clients") or []
+    client_name = clients[0]["name"] if clients else None
+    when = parsed.get("when")
+    duration = parsed.get("duration_min")
+
+    if verb == "book":
+        call = {"client": client_name, "when": when}
+        if duration:
+            call["duration"] = f"{duration} min"
+        return _relay("sched_book", call)
+
+    if verb == "recommend":
+        # "recommend the best day for bala in two weeks" — the date is the window
+        # to search, not the day to book.
+        call = {"client": client_name}
+        if parsed.get("when_text") or when:
+            call["within"] = parsed.get("when_text") or when
+        return _relay("sched_recommend", call)
+
+    if verb == "list":
+        return _relay_list(parsed, when, client_name)
+
+    if verb == "list_clients":
+        return _relay("sched_client_list", {})
+
+    if verb == "move":
+        return _relay("sched_move", {"client": client_name, "to_when": when})
+
+    if verb == "cancel":
+        call = {"client": client_name}
+        if when:
+            call["when"] = when
+        return _relay("sched_cancel", call)
+
+    if verb == "export_calendar":
+        return _relay("sched_ical_export", {})
+
+    if verb == "add_client":
+        # Names and addresses cannot come from a sentence we did not fully parse,
+        # so this asks for the missing pieces rather than inventing them.
+        return _ok(
+            status="needs_details",
+            question="What is the client's name and street address?",
+            note="A client needs an address before travel times mean anything.",
+            source=parsed.get("source"),
+        )
+
+    return _err(f"I understood {verb!r} but cannot act on it yet.")
+
+
+def _relay_list(parsed, when, client_name):
+    """`list` covers three questions. The slots decide which.
+
+    "what is on today" is a day, "what does my week look like" is a week, and
+    "who are my clients" is the roster. One verb, three answers — resolved here
+    rather than by adding three near-identical verbs to the parser.
+    """
+    text = (parsed.get("raw") or "").lower()
+
+    if re.search(r"\bclients?\b|\bcustomers?\b", text):
+        return _relay("sched_client_list", {})
+    if when:
+        return _relay("sched_day", {"when": when})
+    return _relay("sched_week", {"start": "today"})
+
+
+def _relay(tool_name, call_args):
+    """Call another tool in this plugin and unwrap it.
+
+    A relayed result is returned as the tool's own payload, tagged with the call
+    that produced it — so a conversational booking and a direct one are the same
+    thing, not two code paths that drift.
+    """
+    import json as _json
+
+    handler = globals().get(tool_name)
+    if handler is None:
+        return _err(f"internal: no such tool {tool_name!r}")
+
+    try:
+        raw = handler({k: v for k, v in call_args.items() if v is not None})
+        payload = _json.loads(raw)
+    except Exception as exc:
+        return _err(f"{tool_name} failed: {exc}")
+
+    if isinstance(payload, dict):
+        payload.setdefault("routed_to", tool_name)
+        payload.setdefault("called_with", {k: v for k, v in call_args.items() if v is not None})
+        # Which parser produced this call. Carried through the relay so a
+        # conversational booking is traceable to the rules or to the model.
+        if _LAST_SOURCE:
+            payload.setdefault("source", _LAST_SOURCE)
+    return _json.dumps(payload)

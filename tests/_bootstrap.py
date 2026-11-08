@@ -117,6 +117,36 @@ def forbid_network():
     socket._route_book_guarded = True
 
 
+def stub_geocoder(plugin):
+    """Replace both outbound geo helpers with deterministic stubs.
+
+    Called by load_plugin so every test starts offline by default. Four separate
+    setUps forgot to do this individually, and each omission reached the live
+    Nominatim service — which is slow, rate-limited, and makes the suite fail for
+    reasons unrelated to the code. Defaulting to the stub means forgetting is
+    harmless instead of harmful.
+    """
+    plugin.geo.geocode = lambda address, city="", country="Canada": (43.09, -79.08, "stub")
+    plugin.geo.area_bbox = lambda region: (-79.45, 42.85, -78.85, 43.15)
+
+
+def stub_matrix(plugin, minutes=12):
+    """Replace the network travel matrix with a deterministic one.
+
+    The same failure as the geocoder, one layer down: `matrix.build_matrix`
+    reaches the live OSRM demo server. It was stubbed in one test file only, so
+    any test that configured a home base called out to a public service with rate
+    limits. Stubbing by default means forgetting is harmless.
+    """
+    def fake_build(points, force=False):
+        n = len(points)
+        grid = [[0 if i == j else minutes for j in range(n)] for i in range(n)]
+        return {"minutes": grid, "km": None, "approximate": False,
+                "source": "stub", "points": list(points)}
+
+    plugin.matrix.build_matrix = fake_build
+
+
 def load_plugin():
     """Import the plugin as a package and return the module namespace."""
     _install_storage_stub()
@@ -137,6 +167,10 @@ def load_plugin():
     module = importlib.util.module_from_spec(spec)
     sys.modules[PKG_NAME] = module
     spec.loader.exec_module(module)
+
+    # Offline by default, now that the plugin exists to stub.
+    stub_geocoder(module)
+    stub_matrix(module)
 
     # `__init__.py` imports only what `register()` needs, so submodules that are
     # not on that path have to be pulled in explicitly for tests to reach them.
